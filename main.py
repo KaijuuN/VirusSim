@@ -30,6 +30,8 @@ def main():
         simulation.update_population(time_step)
         simulation.draw_population(screen)
 
+        simulation.draw_virus_info(screen, font)
+
         susceptible, sick, infected, recovered, dead = simulation.count_status()
         simulation.draw_lables(screen, font, susceptible, sick, infected, recovered, dead)
         simulation.draw_buttons(screen, font)

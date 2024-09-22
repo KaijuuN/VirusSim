@@ -6,6 +6,7 @@ from config import (
     MIN_INCUBATION_PERIOD, MAX_INCUBATION_PERIOD, 
     RESISTANCE_CHANCE, MIN_SPEED, MAX_SPEED, GRAY, GREEN, RED
 )
+from virus import Virus
 
 
 class HealthStatus(Enum):
@@ -32,6 +33,7 @@ class Individuum:
         self.infection_timer = 0
         self.direction_change_timer = 0
         self.incubation_period = random.randint(MIN_INCUBATION_PERIOD, MAX_INCUBATION_PERIOD)
+        self.virus = None  # No virus by default
 
     def update_color(self):
         # Die Farbe wird direkt auf self.color gesetzt, ohne Rückgabewert.
@@ -69,25 +71,25 @@ class Individuum:
             self.dy = new_dy / length
 
 
-    def infect(self):
+    def infect(self, virus: Virus):
         if random.random() < self.resistance_chance:
             # Die Person ist resistent und wird nicht infiziert
             return
         if self.health_status == HealthStatus.SUSCEPTIBLE:
             self.health_status = HealthStatus.INFECTED
+            self.virus = virus  # Associate the virus with the individual
             
             self.incubation = 0
             self.days_infected = 0
             self.infection_timer = 0
 
-    def recover_or_die(self, recovery_time: int = 14, mortality_rate: float= .01):
-        if self.days_infected >= recovery_time:
-            if random.random() < mortality_rate:
+    def recover_or_die(self):
+        if self.health_status == HealthStatus.SICK and self.days_infected >= 14:
+            if random.random() < self.virus.mortality_rate:
                 self.health_status = HealthStatus.DEAD
                 self.color = GRAY
             else:
                 self.health_status = HealthStatus.RECOVERED
-                self.was_infected = True
                 self.color = GREEN
 
     def update_status(self, time_step):
@@ -97,6 +99,9 @@ class Individuum:
             self.days_infected += 1
             if self.health_status == HealthStatus.INFECTED:
                 self.infection_timer = 0
+                if random.random() < self.virus.virulence:
+                    self.health_status = HealthStatus.SICK
+                
             # Übergang von INFECTED zu SICK nach der Inkubationszeit
             if self.health_status == HealthStatus.INFECTED and self.days_infected >= self.incubation_period:
                 self.health_status = HealthStatus.SICK

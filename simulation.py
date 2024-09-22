@@ -1,6 +1,7 @@
 import math
 import random
 from individuum import Individuum, HealthStatus
+from virus import Virus
 import pygame as pg
 from config import (
     SCREEN_WIDTH, SCREEN_HEIGHT, CELL_SIZE, 
@@ -14,6 +15,7 @@ class Simulation:
         self.screen_width = SCREEN_WIDTH  # Stelle sicher, dass diese gesetzt werden
         self.screen_height = SCREEN_HEIGHT  # Stelle sicher, dass diese gesetzt werden
         self.population = [Individuum(screen_width=SCREEN_WIDTH, screen_height=SCREEN_HEIGHT) for _ in range(POPULATION_SIZE)]
+        self.active_virus = Virus(name="COVID-19", virulence=0.3, mortality_rate=0.02, mutation_rate=0.1)
         self.reset_button_rect = pg.Rect(SCREEN_WIDTH - 120, 10, 100, 40)
         self.infect_button_rect = pg.Rect(SCREEN_WIDTH - 120, 60, 100, 40)
         self.toggle_grid_button_rect = pg.Rect(SCREEN_WIDTH - 120, 110, 100, 40)
@@ -28,23 +30,25 @@ class Simulation:
         self.grid_height = SCREEN_HEIGHT // self.cell_size
         self.simulation_paused = True
         self.selected_individuum = None
+        self.mutation_timer = 0
 
     def reset_population(self):
-        self.population = [Individuum(screen_width=self.screen_width, screen_height=self.screen_height) for _ in range(self.population_size)]
+        self.population = [Individuum(screen_width=self.screen_width, screen_height=self.screen_height) for _ in range(POPULATION_SIZE)]
         self.simulation_days = 0
 
     def infect_random_person(self):
         susceptible_person = [p for p in self.population if p.health_status == HealthStatus.SUSCEPTIBLE]
         if susceptible_person:
-            random.choice(susceptible_person).infect()
+            person = random.choice(susceptible_person)
+            person.infect(self.active_virus)
 
     def toggle_pause(self):
         self.simulation_paused = not self.simulation_paused  # Wechsel zwischen Start/Pause
 
     def update_population(self, time_step):
+        grid = [[[] for _ in range(self.grid_width)] for _ in range(self.grid_height)]
         if self.simulation_paused:
             return  # Wenn die Simulation pausiert ist, überspringen wir die Aktualisierung
-        grid = [[[] for _ in range(self.grid_width)] for _ in range(self.grid_height)]
 
         # Platziere jede Person in der entsprechenden Rasterzelle basierend auf ihrer Position
         for person in self.population:
@@ -62,6 +66,14 @@ class Simulation:
                 person.update_status(time_step)
                 person.recover_or_die()
                 self.spread_infection(person, grid)
+
+        # Simulationszeit aktualisieren
+        self.mutation_timer += time_step
+
+        # Alle 5000 Millisekunden (ca. 5 Tage in Simulation) Virus mutieren lassen
+        if self.mutation_timer >= 5000:
+            self.active_virus.mutate()
+            self.mutation_timer = 0
 
         self.day_timer += time_step
         if self.day_timer >= 1000:
@@ -90,7 +102,22 @@ class Simulation:
                             distance = math.sqrt((infected_person.x - other_person.x)**2 + (infected_person.y - other_person.y)**2)
                             if distance < self.infection_radius:
                                 if random.random() < self.infection_chance:
-                                    other_person.infect()
+                                    other_person.infect(self.active_virus)
+
+
+    # Neue Methode zum Zeichnen der Virusinformationen
+    def draw_virus_info(self, screen, font):
+        virus_info = [
+            f"Virus Name: {self.active_virus.name}",
+            f"Virulenz: {self.active_virus.virulence:.2f}",
+            f"Sterberate: {self.active_virus.mortality_rate:.2f}",
+            f"Mutationsrate: {self.active_virus.mutation_rate:.2f}"
+        ]
+        y_offset = SCREEN_HEIGHT - 100  # Platzierung unten links
+        for info in virus_info:
+            screen.blit(font.render(info, True, WHITE), (10, y_offset))
+            y_offset += 20
+
 
     def draw_population(self, screen):
         for person in self.population:
@@ -124,10 +151,11 @@ class Simulation:
 
         if self.selected_individuum:
             # Zeige die Informationen des ausgewählten Individuums an
-            screen.blit(font.render(f"Selected Individuum - Health: {self.selected_individuum.health:.2f}", True, WHITE), (10, 130))
-            screen.blit(font.render(f"Status: {self.selected_individuum.health_status.name}", True, WHITE), (10, 150))
-            screen.blit(font.render(f"Days Infected: {self.selected_individuum.days_infected}", True, WHITE), (10, 170))
-            screen.blit(font.render(f"Resistance Chance: {self.selected_individuum.resistance_chance}", True, WHITE), (10, 190))
+            screen.blit(font.render(f"Selected Individuum - Health: {self.selected_individuum.health:.2f}", True, WHITE), (10, 180))
+            screen.blit(font.render(f"Status: {self.selected_individuum.health_status.name}", True, WHITE), (10, 200))
+            screen.blit(font.render(f"Days Infected: {self.selected_individuum.days_infected}", True, WHITE), (10, 220))
+            screen.blit(font.render(f"Resistance Chance: {self.selected_individuum.resistance_chance}", True, WHITE), (10, 240))
+            screen.blit(font.render(f"Virus: {self.selected_individuum.virus.name}{self.selected_individuum.virus.mutation_marker}", True, WHITE), (10, 260))
 
     def draw_buttons(self, screen, font):
         # Reset-Button

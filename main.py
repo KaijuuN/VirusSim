@@ -17,6 +17,7 @@ WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 BLUE = (0, 0, 255)
 RED = (255, 0, 0)
+ORANGE = (255, 165, 0)
 GREEN = (0, 255, 0)
 GRAY = (169, 169, 169)
 
@@ -27,21 +28,24 @@ font = pg.font.SysFont(None, 24)
 class HealthStatus(Enum):
     SUSCEPTIBLE = 1
     INFECTED = 2
-    RECOVERED = 3
-    DEAD = 4
+    SICK = 3
+    RECOVERED = 4
+    DEAD = 5
 
 class StatusColors(Enum):
     SUSCEPTIBLE: str = "blue"
     INFECTED: str = "red"
+    SICK: str = "red"
     RECOVERED: str = "green"
     DEAD: str = "black"
     
 
 class Individuum:
-    def __init__(self, health: float = 100.0) -> None:
+    def __init__(self, health: float = 100.0, resistance_chance: float = 0.2) -> None:
         self.health = health
-        self.x = random.uniform(50,screen_width-50)
-        self.y = random.uniform(50,screen_height-50)
+        self.resistance_chance = resistance_chance  # Wahrscheinlichkeit resistent zu sein
+        self.x = random.uniform(50, screen_width - 50)
+        self.y = random.uniform(50, screen_height - 50)
         self.dx = random.uniform(-1, 1)  # Bewegung in x-Richtung
         self.dy = random.uniform(-1, 1)  # Bewegung in y-Richtung
         self.speed = random.uniform(1, 3)  # Geschwindigkeit
@@ -50,6 +54,8 @@ class Individuum:
         self.color = BLUE
         self.infection_timer = 0
         self.direction_change_timer = 0  # Timer für Richtungsänderung
+        self.incubation_period = random.randint(4, 7)  # Inkubationszeit zwischen 2 und 5 Tagen
+        
 
     def move(self, time_step):
         # A function that updates the positions of the persons in each time unit.
@@ -62,9 +68,6 @@ class Individuum:
                 self.dx *= -1  # Richtung in x-Richtung umkehren
             if self.y <= 0 or self.y >= screen_height:
                 self.dy *= -1  # Richtung in y-Richtung umkehren
-        # # Begrenzen auf den Bildschirmbereich
-        #     self.x = max(0, min(screen_width, self.x))
-        #     self.y = max(0, min(screen_height, self.y))
             self.direction_change_timer += time_step
             if self.direction_change_timer > 3000:  # Richtung alle 3 Sekunden leicht ändern
                 self.change_direction()
@@ -86,9 +89,11 @@ class Individuum:
 
 
     def infect(self):
+        if random.random() < self.resistance_chance:
+            # Die Person ist resistent und wird nicht infiziert
+            return
         if self.health_status == HealthStatus.SUSCEPTIBLE:
             self.health_status = HealthStatus.INFECTED
-            self.color = RED
             
             self.incubation = 0
             self.days_infected = 0
@@ -109,11 +114,23 @@ class Individuum:
         if self.infection_timer >= 1000:  # Nur alle 1 Sekunde updaten
             self.days_infected += 1
             self.infection_timer = 0
-        match self.health_status:
-            case HealthStatus.RECOVERED:
-                print("Person is recovered.")
-            case HealthStatus.DEAD:
-                print("Person is dead and no longer moving.")
+            if self.health_status == HealthStatus.INFECTED:
+                self.color = ORANGE
+            # Übergang von INFECTED zu SICK nach der Inkubationszeit
+            if self.health_status == HealthStatus.INFECTED and self.days_infected >= self.incubation_period:
+                self.health_status = HealthStatus.SICK
+                
+
+            # Wenn krank, Gesundheit verringern
+            if self.health_status == HealthStatus.SICK:
+                self.color = RED  # Rot signalisiert, dass die Person krank ist
+                self.health -= random.uniform(0.5, 2.0)  # Verringert die Gesundheit
+                if self.health <= 0:
+                    self.health_status = HealthStatus.DEAD
+                    self.color = GRAY
+
+            # Genesungs- oder Todesprozess
+            self.recover_or_die()
 
 
 class Simulation:
@@ -167,6 +184,9 @@ class Simulation:
             self.day_timer = 0
 
     def spread_infection(self, infected_person, grid):
+        if infected_person.health_status != HealthStatus.INFECTED:
+            return  # Nur infizierte Personen können die Infektion verbreiten
+    
         # Finde die Rasterzelle der infizierten Person
         grid_x = int(infected_person.x // self.cell_size)
         grid_y = int(infected_person.y // self.cell_size)
@@ -200,18 +220,20 @@ class Simulation:
 
     def count_status(self):
         susceptible = sum(1 for p in self.population if p.health_status == HealthStatus.SUSCEPTIBLE)
+        sick = sum(1 for p in self.population if p.health_status == HealthStatus.SICK)
         infected = sum(1 for p in self.population if p.health_status == HealthStatus.INFECTED)
         recovered = sum(1 for p in self.population if p.health_status == HealthStatus.RECOVERED)
         dead = sum(1 for p in self.population if p.health_status == HealthStatus.DEAD)
 
-        return susceptible, infected, recovered, dead
+        return susceptible, sick, infected, recovered, dead
 
-    def draw_lables(self, susceptible, infected, recovered, dead):
+    def draw_lables(self, susceptible, sick, infected, recovered, dead):
         screen.blit(font.render(f"Susceptible: {susceptible}", True, WHITE), (10,10))
-        screen.blit(font.render(f"Infected: {infected}", True, WHITE), (10,30))
-        screen.blit(font.render(f"Recovered: {recovered}", True, WHITE), (10,50))
-        screen.blit(font.render(f"Dead: {dead}", True, WHITE), (10,70))
-        screen.blit(font.render(f"Days: {self.simulation_days}", True, WHITE), (10, 90))  # Tage-Label
+        screen.blit(font.render(f"Sick: {sick}", True, WHITE), (10,30))
+        screen.blit(font.render(f"Infected: {infected}", True, WHITE), (10,50))
+        screen.blit(font.render(f"Recovered: {recovered}", True, WHITE), (10,70))
+        screen.blit(font.render(f"Dead: {dead}", True, WHITE), (10,90))
+        screen.blit(font.render(f"Days: {self.simulation_days}", True, WHITE), (10, 110))  # Tage-Label
     
     def draw_buttons(self):
         # Reset-Button
@@ -235,7 +257,7 @@ class Simulation:
 
 
 def main():
-    simulation = Simulation(population_size=10000, cell_size=100)
+    simulation = Simulation(population_size=100, cell_size=20)
     clock = pg.time.Clock()
 
     running = True
@@ -256,8 +278,8 @@ def main():
         simulation.draw_population()
        
 
-        susceptible,infected,recovered,dead = simulation.count_status()
-        simulation.draw_lables(susceptible,infected,recovered,dead)
+        susceptible,sick,infected,recovered,dead = simulation.count_status()
+        simulation.draw_lables(susceptible,sick,infected,recovered,dead)
         simulation.draw_buttons()
 
         if simulation.show_grid:

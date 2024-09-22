@@ -2,90 +2,130 @@ from dataclasses import dataclass, field
 from enum import Enum
 import numpy as np
 import random
-import matplotlib
-from matplotlib import pyplot as plt
+import pygame as pg
 
 
-susceptible: int = 0
-infected: int = 0
-recovered: int = 0
+pg.init()
 
-infectionrate: int = 0
-incubationrate: int = 0
-mortalityrate: int = 0
-recoveryrate: int = 0
+screen_width, screen_height = 800,600
+screen = pg.display.set_mode((screen_width, screen_height))
+pg.display.set_caption("Virus SIM")
+
+# Farben
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+BLUE = (0, 0, 255)
+RED = (255, 0, 0)
+GREEN = (0, 255, 0)
+GRAY = (169, 169, 169)
+
+
+# Schriftarten
+font = pg.font.SysFont(None, 24)
+
+class HealthStatus(Enum):
+    SUSCEPTIBLE = 1
+    INFECTED = 2
+    RECOVERED = 3
+    DEAD = 4
+
+class StatusColors(Enum):
+    SUSCEPTIBLE: str = "blue"
+    INFECTED: str = "red"
+    RECOVERED: str = "green"
+    DEAD: str = "black"
     
-@dataclass
+
 class Individuum:
-
-    health: float = 100.0
-
-    is_susceptible: bool = True
-    is_infected: bool = False
-    is_recovered: bool = False
-    is_dead: bool = False
-
-    was_infected: bool = False
-    is_infectious: bool = False
-
-    has_immunity: bool = False
-    immunity_factor: float = 0.0
-
-    incubation: int = 0
-    days_infected: int = field(default=0, init=False)
-
-    # Verwende default_factory für zufällige Startposition
-    x: float = field(default_factory=lambda: random.uniform(0, 50))
-    y: float = field(default_factory=lambda: random.uniform(0, 50))
+    def __init__(self, health: float = 100.0) -> None:
+        self.health = health
+        self.x = random.uniform(50,screen_width-50)
+        self.y = random.uniform(50,screen_height-50)
+        self.health_status = HealthStatus.SUSCEPTIBLE
+        self.days_infected = 0
+        self.color = BLUE
 
     def move(self, social_distancing_factor: float = 1.0):
         # A function that updates the positions of the persons in each time unit.
-        self.x += random.uniform(-1,1)* social_distancing_factor
-        self.y += random.uniform(-1,1)* social_distancing_factor
+        if self.health_status != HealthStatus.DEAD:
+            self.x += random.uniform(-1,1)* social_distancing_factor
+            self.y += random.uniform(-1,1)* social_distancing_factor
+        # Begrenzen auf den Bildschirmbereich
+            self.x = max(0, min(screen_width, self.x))
+            self.y = max(0, min(screen_height, self.y))
 
     def infect(self):
-        if self.is_susceptible:
-            self.is_susceptible = False
-            self.is_infected = True
+        if self.health_status == HealthStatus.SUSCEPTIBLE:
+            self.health_status = HealthStatus.INFECTED
+            self.color = RED
+            
             self.incubation = 0
             self.days_infected = 0
 
     def recover_or_die(self, recovery_time: int, mortality_rate: float):
         if self.days_infected >= recovery_time:
             if random.random() < mortality_rate:
-                self.is_dead = True
+                self.health_status = HealthStatus.DEAD
+                self.color = GRAY
             else:
-                self.is_recovered = True
-                self.is_infected = False
+                self.health_status = HealthStatus.RECOVERED
                 self.was_infected = True
-
-
+                self.color = GREEN
 
     def update_status(self):
-        if self.is_infected:
-            self.days_infected += 1
-            self.incubation += 1
-
-def check_for_infection():
-    # A function that checks whether an infection has occurred between two people.
-    pass
-
-def generate_dna():
-    # A function that generates and visualizes a random DNA strand.
-    pass
+        match self.health_status:
+            case HealthStatus.INFECTED:
+                self.days_infected += 1
+                self.incubation += 1
+            case HealthStatus.RECOVERED:
+                print(f"Person is recovered and immune with factor {self.immunity_factor}.")
+            case HealthStatus.DEAD:
+                print("Person is dead and no longer moving.")
 
 
+population_size = 100
+population = [Individuum() for _ in range(population_size)]
 
-def main():
-    population = [Individuum() for _ in range(100)]
+def update_population():
+    for person in population:
+        person.move(social_distancing_factor=.5)
+        if person.health_status == HealthStatus.INFECTED:
+            person.update_status()
+            person.recover_or_die()
 
-    for day in range(356):
-        for person in population:
-            person.move(social_distancing_factor=.5)
-            if person.is_infected:
-                person.update_status()
-                person.recover_or_die()
+def draw_population():
+    for person in population:
+        pg.draw.circle(screen, person.color,(int(person.x), int(person.y)),5)
 
+def count_status():
+    susceptible = sum(1 for p in population if p.health_status == HealthStatus.SUSCEPTIBLE)
+    infected = sum(1 for p in population if p.health_status == HealthStatus.INFECTED)
+    recovered = sum(1 for p in population if p.health_status == HealthStatus.RECOVERED)
+    dead = sum(1 for p in population if p.health_status == HealthStatus.DEAD)
 
-if __name__ == '__main__':
-    main()
+    return susceptible, infected, recovered, dead
+
+def draw_lables(susceptible, infected, recovered, dead):
+    screen.blit(font.render(f"Susceptible: {susceptible}", True, WHITE), (10,10))
+    screen.blit(font.render(f"Infected: {infected}", True, WHITE), (10,30))
+    screen.blit(font.render(f"Recovered: {recovered}", True, WHITE), (10,50))
+    screen.blit(font.render(f"Dead: {dead}", True, WHITE), (10,70))
+
+running = True
+clock = pg.time.Clock()
+
+while running:
+    screen.fill(BLACK)
+
+    for event in pg.event.get():
+        if event.type == pg.QUIT:
+            running = False
+        
+    update_population()
+    draw_population()
+    susceptible,infected,recovered,dead = count_status()
+    draw_lables(susceptible,infected,recovered,dead)
+    pg.display.flip()
+    clock.tick(30)
+
+pg.quit()

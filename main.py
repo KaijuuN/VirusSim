@@ -140,6 +140,7 @@ class Simulation:
         self.reset_button_rect = pg.Rect(screen_width - 120,10,100,40)
         self.infect_button_rect = pg.Rect(screen_width - 120,60,100,40)
         self.toggle_grid_button_rect = pg.Rect(screen_width - 120, 110, 100, 40)
+        self.pause_button_rect = pg.Rect(screen_width - 120, 160, 100, 40)  # Pause/Start Button
         self.show_grid = False  # Grid-Ansicht standardmäßig ausgeschaltet
         self.simulation_days = 0
         self.day_timer = 0
@@ -148,6 +149,8 @@ class Simulation:
         self.cell_size = cell_size  # Größe jeder Zelle im Raster
         self.grid_width = screen_width // self.cell_size
         self.grid_height = screen_height // self.cell_size
+        self.simulation_paused = True  # Startet in pausiertem Zustand
+        self.selected_individuum = None  # Das angeklickte Individuum
 
     def reset_population(self):
         self.population = [Individuum() for _ in range(self.population_size)]
@@ -158,7 +161,13 @@ class Simulation:
         if susceptible_person:
             random.choice(susceptible_person).infect()
 
+    def toggle_pause(self):
+        self.simulation_paused = not self.simulation_paused  # Wechsel zwischen Start/Pause
+
+
     def update_population(self, time_step):
+        if self.simulation_paused:
+            return  # Wenn die Simulation pausiert ist, überspringen wir die Aktualisierung
         grid = [[[] for _ in range(self.grid_width)] for _ in range(self.grid_height)]
 
         # Platziere jede Person in der entsprechenden Rasterzelle basierend auf ihrer Position
@@ -173,7 +182,7 @@ class Simulation:
         # Aktualisiere jede Person und überprüfe Infektionen nur in benachbarten Zellen
         for person in self.population:
             person.move(time_step)
-            if person.health_status == HealthStatus.INFECTED:
+            if person.health_status == HealthStatus.INFECTED or person.health_status == HealthStatus.SICK:
                 person.update_status(time_step)
                 person.recover_or_die()
                 self.spread_infection(person, grid)
@@ -184,8 +193,8 @@ class Simulation:
             self.day_timer = 0
 
     def spread_infection(self, infected_person, grid):
-        if infected_person.health_status != HealthStatus.INFECTED:
-            return  # Nur infizierte Personen können die Infektion verbreiten
+        if infected_person.health_status != HealthStatus.SICK:
+            return  # Nur Kranke Personen können die Infektion verbreiten
     
         # Finde die Rasterzelle der infizierten Person
         grid_x = int(infected_person.x // self.cell_size)
@@ -211,6 +220,9 @@ class Simulation:
     def draw_population(self):
         for person in self.population:
             pg.draw.circle(screen, person.color,(int(person.x), int(person.y)),5)
+        # Hebe das ausgewählte Individuum hervor
+        if self.selected_individuum:
+            pg.draw.circle(screen, WHITE, (int(self.selected_individuum.x), int(self.selected_individuum.y)), 8, 2)
     
     def draw_grid(self):
         for x in range(0, screen_width, self.cell_size):
@@ -220,40 +232,59 @@ class Simulation:
 
     def count_status(self):
         susceptible = sum(1 for p in self.population if p.health_status == HealthStatus.SUSCEPTIBLE)
-        sick = sum(1 for p in self.population if p.health_status == HealthStatus.SICK)
         infected = sum(1 for p in self.population if p.health_status == HealthStatus.INFECTED)
+        sick = sum(1 for p in self.population if p.health_status == HealthStatus.SICK)
         recovered = sum(1 for p in self.population if p.health_status == HealthStatus.RECOVERED)
         dead = sum(1 for p in self.population if p.health_status == HealthStatus.DEAD)
 
-        return susceptible, sick, infected, recovered, dead
+        return susceptible, infected, sick, recovered, dead
 
     def draw_lables(self, susceptible, sick, infected, recovered, dead):
         screen.blit(font.render(f"Susceptible: {susceptible}", True, WHITE), (10,10))
-        screen.blit(font.render(f"Sick: {sick}", True, WHITE), (10,30))
         screen.blit(font.render(f"Infected: {infected}", True, WHITE), (10,50))
+        screen.blit(font.render(f"Sick: {sick}", True, WHITE), (10,30))
         screen.blit(font.render(f"Recovered: {recovered}", True, WHITE), (10,70))
         screen.blit(font.render(f"Dead: {dead}", True, WHITE), (10,90))
         screen.blit(font.render(f"Days: {self.simulation_days}", True, WHITE), (10, 110))  # Tage-Label
+
+        if self.selected_individuum:
+            # Zeige die Informationen des ausgewählten Individuums an
+            screen.blit(font.render(f"Selected Individuum - Health: {self.selected_individuum.health:.2f}", True, WHITE), (10, 130))
+            screen.blit(font.render(f"Status: {self.selected_individuum.health_status.name}", True, WHITE), (10, 150))
+            screen.blit(font.render(f"Days Infected: {self.selected_individuum.days_infected}", True, WHITE), (10, 170))
+            screen.blit(font.render(f"Resistance Chance: {self.selected_individuum.resistance_chance}", True, WHITE), (10, 190))
     
     def draw_buttons(self):
         # Reset-Button
-        reset_button = pg.draw.rect(screen, GRAY, self.reset_button_rect)
+        pg.draw.rect(screen, GRAY, self.reset_button_rect)
         screen.blit(font.render("Reset", True, BLACK), (screen_width - 100, 20))
 
         # Infect-Button
-        infect_button = pg.draw.rect(screen, GRAY, self.infect_button_rect)
+        pg.draw.rect(screen, GRAY, self.infect_button_rect)
         screen.blit(font.render("Infect", True, BLACK), (screen_width - 100, 70))
 
         pg.draw.rect(screen, GRAY, self.toggle_grid_button_rect)
         screen.blit(font.render("I/O Grid", True, BLACK), (screen_width - 100, 120))
+
+        # Pause/Start Button
+        pg.draw.rect(screen, GRAY, self.pause_button_rect)
+        screen.blit(font.render("Start" if self.simulation_paused else "Pause", True, BLACK), (screen_width - 100, 170))
     
     def handle_click(self,mouse_pos):
         if self.reset_button_rect.collidepoint(mouse_pos):
             self.reset_population()
-        if self.infect_button_rect.collidepoint(mouse_pos):
+        elif self.infect_button_rect.collidepoint(mouse_pos):
             self.infect_random_person()
-        if self.toggle_grid_button_rect.collidepoint(mouse_pos):
+        elif self.toggle_grid_button_rect.collidepoint(mouse_pos):
             self.show_grid = not self.show_grid  # Grid ein-/ausschalten
+        elif self.pause_button_rect.collidepoint(mouse_pos):
+            self.toggle_pause()  # Pause/Start der Simulation
+        else:
+            # Prüfe, ob ein Individuum angeklickt wurde
+            for person in self.population:
+                if math.sqrt((mouse_pos[0] - person.x)**2 + (mouse_pos[1] - person.y)**2) <= 5:
+                    self.selected_individuum = person  # Setze das ausgewählte Individuum
+                    break
 
 
 def main():
